@@ -1,4 +1,5 @@
 import express from 'express';
+const cors = require('cors');
 import { Users } from './controllers/Users.js';
 import dotenv from 'dotenv';
 
@@ -7,6 +8,11 @@ dotenv.config();
 
 const app = express();
 const users = new Users();
+
+// Enable CORS for your frontend domain
+app.use(cors({
+    origin: 'http://localhost:8080', // Replace with your frontend URL
+  }));
 
 app.use(express.json()); // Middleware to parse JSON request bodies
 
