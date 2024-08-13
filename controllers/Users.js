@@ -1,6 +1,9 @@
 import { connection as db } from "../config/index.js";
 import { hash, compare } from "bcrypt";
 import jwt from "jsonwebtoken";
+import dotenv from "dotenv";
+
+dotenv.config(); // Ensure environment variables are loaded
 
 class Users {
     fetchUsers(req, res) {
@@ -89,7 +92,6 @@ class Users {
             });
         });
     }
-    
 
     login(req, res) {
         const { Email, userPassword } = req.body;
@@ -101,7 +103,7 @@ class Users {
         db.query(qry, [Email], async (err, result) => {
             if (err) throw err;
             if (!result?.length) {
-                res.json({
+                res.status(401).json({
                     status: res.statusCode,
                     msg: "Wrong email address provided"
                 });
@@ -113,6 +115,15 @@ class Users {
                         Email,
                         userRole: result[0].UserRole
                     });
+
+                    // Set the token in a cookie
+                    res.cookie('authToken', token, {
+                        httpOnly: true,     // Ensure the cookie is only accessible by the web server
+                        secure: false,      // Set to true if you're using HTTPS in production
+                        sameSite: 'None',   // Allows cross-site requests (use 'Strict' or 'Lax' for same-site only)
+                        maxAge: 60 * 60 * 1000  // 1 hour
+                    });
+
                     res.json({
                         status: res.statusCode,
                         msg: "You're logged in",
@@ -120,7 +131,7 @@ class Users {
                         result: result[0]
                     });
                 } else {
-                    res.json({
+                    res.status(401).json({
                         status: res.statusCode,
                         msg: "Please provide the correct password"
                     });

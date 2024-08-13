@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser'; // Import cookie-parser
 import { Users } from './controllers/Users.js';
 import dotenv from 'dotenv';
 
@@ -12,8 +13,10 @@ const users = new Users();
 // Enable CORS for your frontend domain
 app.use(cors({
     origin: 'http://localhost:8080', // Replace with your frontend URL
-  }));
+    credentials: true // Allow credentials (cookies) to be sent
+}));
 
+app.use(cookieParser()); // Use cookie-parser middleware
 app.use(express.json()); // Middleware to parse JSON request bodies
 
 app.get('/users', (req, res) => users.fetchUsers(req, res));
