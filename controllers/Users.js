@@ -119,10 +119,9 @@ class Users {
                     // Set the token in a cookie
                     res.cookie('authToken', token, {
                         httpOnly: true,     // Ensure the cookie is only accessible by the web server
-                        secure: process.env.NODE_ENV === 'production',  // Set to true if using HTTPS
-                        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',  // Allow cross-site cookies in production
-                        maxAge: 60 * 60 * 1000,  // 1 hour
-                        path: '/' // Ensure path is set
+                        secure: false,      // Set to true if you're using HTTPS in production
+                        sameSite: 'Lax',    // Use 'Lax' or 'Strict' to avoid third-party issues
+                        maxAge: 60 * 60 * 1000  // 1 hour
                     });
 
                     res.json({
@@ -147,5 +146,6 @@ const createToken = (user) => {
 };
 
 export { Users };
+
 
 
