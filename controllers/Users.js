@@ -1,4 +1,3 @@
-// users.js
 import { connection as db } from "../config/index.js";
 import { hash, compare } from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -120,8 +119,8 @@ class Users {
                     // Set the token in a cookie
                     res.cookie('authToken', token, {
                         httpOnly: true,     // Ensure the cookie is only accessible by the web server
-                        secure: false,      // Set to true if you're using HTTPS in production
-                        sameSite: 'None',   // Allows cross-site requests (use 'Strict' or 'Lax' for same-site only)
+                        secure: process.env.NODE_ENV === 'production',  // Set to true if using HTTPS
+                        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',  // Allow cross-site cookies in production
                         maxAge: 60 * 60 * 1000,  // 1 hour
                         path: '/' // Ensure path is set
                     });
@@ -148,4 +147,5 @@ const createToken = (user) => {
 };
 
 export { Users };
+
 
