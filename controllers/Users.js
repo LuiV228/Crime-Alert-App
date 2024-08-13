@@ -1,3 +1,4 @@
+// users.js
 import { connection as db } from "../config/index.js";
 import { hash, compare } from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -121,7 +122,8 @@ class Users {
                         httpOnly: true,     // Ensure the cookie is only accessible by the web server
                         secure: false,      // Set to true if you're using HTTPS in production
                         sameSite: 'None',   // Allows cross-site requests (use 'Strict' or 'Lax' for same-site only)
-                        maxAge: 60 * 60 * 1000  // 1 hour
+                        maxAge: 60 * 60 * 1000,  // 1 hour
+                        path: '/' // Ensure path is set
                     });
 
                     res.json({
@@ -146,3 +148,4 @@ const createToken = (user) => {
 };
 
 export { Users };
+
