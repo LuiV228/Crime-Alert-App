@@ -280,7 +280,6 @@ export default {
 </script>
 
 <style scoped>
-/* General styles */
 .container {
   display: flex;
   flex-direction: column;
@@ -400,11 +399,3 @@ export default {
   margin: 5px 0;
 }
 </style>
-
-
-
-
-
-
-
-
