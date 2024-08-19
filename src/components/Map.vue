@@ -2,62 +2,58 @@
   <div class="container">
     <div class="content">
       <h2 class="title">Crime Alert</h2>
-      <button v-if="!formVisible" class="btn btn-primary" @click="showForm">Report</button>
-      <div v-if="formVisible" class="form-container">
-        <h4 class="form-title">Report Your Experience</h4>
-        <form @submit.prevent="submitForm">
-          <div class="form-group">
-            <label for="crimeType">Type of Crime:</label>
-            <select v-model="crimeType" id="crimeType" class="form-control" required>
-              <option value="" disabled>Select a crime</option>
-              <option value="experienced">Experienced a crime</option>
-              <option value="witnessed">Witnessed a crime</option>
-            </select>
+      <button v-if="!formVisible && !modalVisible" class="btn btn-primary" @click="showModal">Report</button>
+
+      <!-- Modal -->
+      <div v-if="modalVisible" class="modal">
+        <div class="modal-content">
+          <h4 v-if="currentQuestion">{{ currentQuestion.title }}</h4>
+          <div class="modal-options" v-if="currentQuestion">
+            <button 
+              v-for="(option, index) in currentQuestion.options" 
+              :key="index" 
+              :class="['btn', { 'selected': selectedOption === option.value }]" 
+              @click="selectAnswer(option.value)">
+              {{ option.label }}
+            </button>
           </div>
-          <div class="form-group">
-            <label for="specificCrime">Specific Crime:</label>
-            <select v-model="specificCrime" id="specificCrime" class="form-control" required>
-              <option value="" disabled>Select specific crime</option>
-              <option value="theft">Theft</option>
-              <option value="assault">Assault</option>
-              <option value="vandalism">Vandalism</option>
-              <!-- Add more specific crimes as needed -->
-            </select>
+          <div class="modal-navigation">
+            <button 
+              class="btn btn-secondary" 
+              @click="previousQuestion"
+              :disabled="questionIndex === 0">
+              Previous
+            </button>
+            <button 
+              v-if="!isLastQuestion" 
+              class="btn btn-primary" 
+              @click="nextQuestion"
+              :disabled="!selectedOption">
+              Next
+            </button>
+            <button 
+              v-if="isLastQuestion" 
+              class="btn btn-primary" 
+              @click="getLocation">
+              Get Location
+            </button>
           </div>
-          <button type="submit" class="btn btn-primary">Submit</button>
-          <button type="button" class="btn btn-secondary" @click="cancelForm">Cancel</button>
-        </form>
+        </div>
       </div>
+
       <div v-if="retryButtonVisible" class="ui-message">
-        <p>Failed to fetch accurate location. <button class="btn btn-secondary" @click="retryFetchLocation">Retry</button></p>
+        <p>Failed to fetch accurate location. 
+          <button class="btn btn-secondary" @click="retryFetchLocation">Retry</button>
+        </p>
       </div>
-      <button v-if="currentLocation && !riskLevelFormVisible && !dangerZoneFormVisible" class="btn btn-danger" @click="enableRiskLevelForm">Set Danger Zone</button>
-      <div v-if="riskLevelFormVisible" class="form-container">
-        <h4 class="form-title">Select Risk Level</h4>
-        <form @submit.prevent="confirmRiskLevel">
-          <div class="form-group">
-            <label for="riskLevel">Risk Level:</label>
-            <select v-model="riskLevel" id="riskLevel" class="form-control" required>
-              <option value="" disabled>Select risk level</option>
-              <option value="high">High Risk</option>
-              <option value="medium">Medium Risk</option>
-              <option value="low">Low Risk</option>
-            </select>
-          </div>
-          <button type="submit" class="btn btn-primary">Confirm</button>
-          <button type="button" class="btn btn-secondary" @click="cancelRiskLevelForm">Cancel</button>
-        </form>
+
+      <!-- Render map only if the location is available -->
+      <div v-if="currentLocation && !riskLevelFormVisible && !dangerZoneFormVisible && !mapVisible" class="map-setup">
+        <button class="btn btn-danger" @click="enableRiskLevelForm">Set Danger Zone</button>
       </div>
-      <div v-if="dangerZoneFormVisible" class="form-container">
-        <h4 class="form-title">Set Danger Zone</h4>
-        <p>Click on the map to set a danger zone within 1000 meters of your location.</p>
-        <button type="button" class="btn btn-primary" @click="confirmDangerZone">Confirm</button>
-        <button type="button" class="btn btn-secondary" @click="cancelDangerZoneSetting">Cancel</button>
-      </div>
-      <div id="map" class="map"></div>
-      <div v-if="locationDisplay" class="ui-message">
-        <div v-html="locationDisplay"></div>
-      </div>
+
+      <div v-if="mapVisible" id="map" class="map"></div> <!-- Map container -->
+
       <div v-if="dangerZones.length > 0" class="danger-zones">
         <h4 class="danger-zones-title">Danger Zones</h4>
         <ul>
@@ -67,13 +63,18 @@
           </li>
         </ul>
       </div>
+
+      <div v-if="locationDisplay" class="ui-message">
+        <div v-html="locationDisplay"></div>
+        <button class="btn btn-secondary" @click="editInformation">Edit Information</button>
+        <button class="btn btn-primary" @click="submitInformation">Submit Information</button>
+      </div>
     </div>
   </div>
 </template>
 
 <script>
 import L from 'leaflet';
-import axios from 'axios';
 import 'leaflet/dist/leaflet.css';
 
 export default {
@@ -86,194 +87,241 @@ export default {
       retryButtonVisible: false,
       dangerZones: [],
       currentLocation: null,
-      formVisible: false,
+      modalVisible: false,
+      mapVisible: false,
       riskLevelFormVisible: false,
       dangerZoneFormVisible: false,
-      crimeType: '',
-      specificCrime: '',
-      riskLevel: '',
-      dangerZoneRadius: 700,
-      isSettingDangerZone: false,
-      areaName: ''
+      questionIndex: 0,
+      selectedOption: null,
+      selectedAnswers: [],
+      questions: [
+        {
+          title: 'What type of crime did you encounter?',
+          options: [
+            { label: 'Experienced a crime', value: 'experienced' },
+            { label: 'Witnessed a crime', value: 'witnessed' },
+            { label: 'Heard about a crime', value: 'heard' },
+          ]
+        },
+        {
+          title: 'What specific crime did you encounter?',
+          options: [
+            { label: 'Theft', value: 'theft' },
+            { label: 'Assault', value: 'assault' },
+            { label: 'Vandalism', value: 'vandalism' },
+            { label: 'Burglary', value: 'burglary' },
+            { label: 'Robbery', value: 'robbery' },
+            { label: 'Fraud', value: 'fraud' },
+            { label: 'Harassment', value: 'harassment' },
+            { label: 'Other', value: 'other' },
+          ]
+        },
+        {
+          title: 'Where did the crime occur?',
+          options: [
+            { label: 'On the street', value: 'street' },
+            { label: 'In a building (residential)', value: 'residential' },
+            { label: 'In a building (commercial)', value: 'commercial' },
+            { label: 'At a public event', value: 'event' },
+            { label: 'In a vehicle', value: 'vehicle' },
+            { label: 'In a park or open space', value: 'public place' },
+            { label: 'Unknown', value: 'unknown' },
+          ]
+        },
+        {
+          title: 'When did the crime occur?',
+          options: [
+            { label: 'Just now', value: 'just now' },
+            { label: 'Within the last hour', value: 'last hour' },
+            { label: 'Today', value: 'today' },
+            { label: 'Yesterday', value: 'yesterday' },
+            { label: 'Last week', value: 'last week' },
+          ]
+        },
+        {
+          title: 'How many suspects were involved?',
+          options: [
+            { label: '1', value: '1 suspect' },
+            { label: '2-3', value: '2-3 suspects' },
+            { label: '4-5', value: '4-5 suspects' },
+            { label: 'More than 5', value: 'more than 5 suspects' },
+            { label: 'Unknown', value: 'unknown suspect(s)' },
+          ]
+        },
+        {
+          title: 'Were any weapons involved?',
+          options: [
+            { label: 'Yes, a firearm', value: 'firearm' },
+            { label: 'Yes, a knife or sharp object', value: 'knife' },
+            { label: 'Yes, another type of weapon', value: 'other' },
+            { label: 'No weapons', value: 'unarmed' },
+            { label: 'Unknown', value: 'unknown' },
+          ]
+        },
+        {
+          title: 'Were there any injuries?',
+          options: [
+            { label: 'Yes, minor injuries', value: 'minor injuries' },
+            { label: 'Yes, serious injuries', value: 'serious injuries' },
+            { label: 'Yes, fatal injuries', value: 'fatal injuries' },
+            { label: 'No injuries', value: 'no injuries' },
+            { label: 'Unknown', value: 'unknown' },
+          ]
+        },
+        {
+          title: 'Do you wish to set a danger zone?',
+          options: [
+            { label: 'Yes', value: 'yes' },
+            { label: 'No', value: 'no' }
+          ]
+        }
+      ],
     };
   },
-  mounted() {
-    this.initMap();
+  computed: {
+    currentQuestion() {
+      return this.questions[this.questionIndex];
+    },
+    isLastQuestion() {
+      return this.questionIndex === this.questions.length - 1;
+    }
   },
   methods: {
-    initMap() {
-      this.map = L.map('map').setView([51.505, -0.09], 13);
-
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      }).addTo(this.map);
-
-      this.map.on('click', this.handleMapClick);
+    showModal() {
+      this.modalVisible = true;
     },
-    showForm() {
-      this.formVisible = true;
+    selectAnswer(value) {
+      this.selectedOption = value;
     },
-    cancelForm() {
-      this.formVisible = false;
+    nextQuestion() {
+      if (this.questionIndex < this.questions.length - 1) {
+        this.selectedAnswers[this.questionIndex] = this.selectedOption;
+        this.questionIndex++;
+        this.selectedOption = null;
+      }
     },
-    submitForm() {
-      console.log('Crime Type:', this.crimeType);
-      console.log('Specific Crime:', this.specificCrime);
-      this.formVisible = false;
-      this.fetchLocation();
+    previousQuestion() {
+      if (this.questionIndex > 0) {
+        this.selectedAnswers[this.questionIndex] = this.selectedOption;
+        this.questionIndex--;
+        this.selectedOption = null;
+      }
     },
-    fetchLocation() {
-      console.log('Fetching location...');
+    getLocation() {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
-          this.showPosition,
-          this.showError,
-          {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 0
-          }
+          (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            this.currentLocation = { lat, lng };
+
+            // Construct the locationDisplay content based on the selected answers
+            const description = this.generateDescription();
+            this.locationDisplay = `
+              <strong>Location:</strong> (${lat.toFixed(5)}, ${lng.toFixed(5)})<br/>
+              <strong>Description:</strong> ${description}
+            `;
+            this.mapVisible = true;
+
+            // Initialize the map
+            this.$nextTick(() => {
+              this.initMap();
+            });
+          },
+          () => {
+            this.retryButtonVisible = true;
+          },
+          { enableHighAccuracy: true }
         );
       } else {
-        this.locationDisplay = "Geolocation is not supported by this browser.";
+        alert('Geolocation is not supported by this browser.');
       }
+
+      this.modalVisible = false;
     },
-    retryFetchLocation() {
-      console.log('Retry button clicked');
-      this.fetchLocation();
+    generateDescription() {
+      const answers = this.selectedAnswers;
+      const descriptions = [
+        `Type of crime: ${answers[0] || 'Not specified'}`,
+        `Specific crime: ${answers[1] || 'Not specified'}`,
+        `Location of crime: ${answers[2] || 'Not specified'}`,
+        `Time of crime: ${answers[3] || 'Not specified'}`,
+        `Number of suspects: ${answers[4] || 'Not specified'}`,
+        `Weapons involved: ${answers[6] || 'Not specified'}`,
+        `Injuries: ${answers[8] || 'Not specified'}`,
+        `Danger zone set: ${answers[10] || 'Not specified'}`,
+      ];
+      return descriptions.join('<br/>');
     },
-    async showPosition(position) {
-      const latitude = position.coords.latitude;
-      const longitude = position.coords.longitude;
-      const accuracy = position.coords.accuracy;
-
-      console.log('Current Location:', latitude, longitude);
-      console.log('Accuracy:', accuracy);
-
-      this.currentLocation = [latitude, longitude];
-      this.map.setView(this.currentLocation, 13);
-
-      if (this.circle) {
-        this.circle.setLatLng(this.currentLocation);
-        this.circle.setRadius(accuracy > this.dangerZoneRadius ? this.dangerZoneRadius : accuracy);
-      } else {
-        this.circle = L.circle(this.currentLocation, {
-          color: 'blue',
-          fillColor: '#30f',
-          fillOpacity: 0.2,
-          radius: accuracy > this.dangerZoneRadius ? this.dangerZoneRadius : accuracy
-        }).addTo(this.map);
-      }
-
-      // Reverse geocode to get area name
-      try {
-        const response = await axios.get(`https://nominatim.openstreetmap.org/reverse`, {
-          params: {
-            lat: latitude,
-            lon: longitude,
-            format: 'json',
-            addressdetails: 1
-          }
-        });
-
-        const address = response.data.address;
-        this.areaName = [
-          address.suburb,
-          address.city,
-          address.state,
-          address.country
-        ].filter(Boolean).join(', ');
-
-        // Display a more specific area description if available
-        if (address.suburb) {
-          this.areaName = address.suburb;
-        } else if (address.city) {
-          this.areaName = address.city;
-        } else {
-          this.areaName = address.state || address.country || 'Unknown area';
-        }
-      } catch (error) {
-        console.error('Error fetching area name:', error);
-        this.areaName = 'Unknown area';
-      }
-
-      const accuracyLevel = accuracy <= 100 ? "Strong" : (accuracy <= 500 ? "Moderate" : "Low");
-      this.locationDisplay = `
-        <div class="location-info">
-          <div class="location-item"><strong>Coordinates:</strong> Latitude: ${latitude.toFixed(5)}, Longitude: ${longitude.toFixed(5)}</div>
-          <div class="location-item"><strong>Area:</strong> ${this.areaName}</div>
-          <div class="location-item"><strong>Accuracy:</strong> We are confident that your location is within ${accuracy.toFixed(2)} meters (${accuracyLevel})</div>
-          <div class="location-item"><strong>Displayed Radius:</strong> The circle on the map shows an area of ${accuracy.toFixed(2)} meters around your location</div>
-        </div>`;
-
-      this.retryButtonVisible = accuracy > 500;
+    editInformation() {
+      this.modalVisible = true;
+      this.questionIndex = 0;
+      this.selectedOption = this.selectedAnswers[this.questionIndex] || null;
     },
-    showError(error) {
-      let errorMessage = '';
-      switch (error.code) {
-        case error.PERMISSION_DENIED:
-          errorMessage = 'User denied the request for Geolocation.';
-          break;
-        case error.POSITION_UNAVAILABLE:
-          errorMessage = 'Location information is unavailable.';
-          break;
-        case error.TIMEOUT:
-          errorMessage = 'The request to get user location timed out.';
-          break;
-        case error.UNKNOWN_ERROR:
-          errorMessage = 'An unknown error occurred.';
-          break;
-      }
-      this.locationDisplay = `Error: ${errorMessage}`;
-      this.retryButtonVisible = true;
-    },
-    handleMapClick(event) {
-      if (this.isSettingDangerZone && this.currentLocation) {
-        const distance = this.map.distance(this.currentLocation, event.latlng);
-        if (distance <= this.dangerZoneRadius) {
-          this.dangerZones.push({
-            latLng: event.latlng,
-            circle: L.circle(event.latlng, {
-              color: this.riskLevel === 'high' ? 'red' : (this.riskLevel === 'medium' ? 'orange' : 'green'),
-              fillColor: this.riskLevel === 'high' ? '#f00' : (this.riskLevel === 'medium' ? '#ffa500' : '#0f0'),
-              fillOpacity: 0.5,
-              radius: 100
-            }).addTo(this.map),
-            riskLevel: this.riskLevel
-          });
-
-          this.dangerZoneFormVisible = false;
-          this.riskLevelFormVisible = false;
-          this.isSettingDangerZone = false;
-        } else {
-          this.locationDisplay = 'You can only set a danger zone within 1000 meters of your current location.';
-        }
-      }
+    submitInformation() {
+      // Handle the submission of the information
+      alert('Information submitted');
     },
     enableRiskLevelForm() {
       this.riskLevelFormVisible = true;
     },
-    confirmRiskLevel() {
-      this.riskLevelFormVisible = false;
-      this.dangerZoneFormVisible = true;
+    retryFetchLocation() {
+      this.retryButtonVisible = false;
+      this.getLocation();
     },
-    cancelRiskLevelForm() {
-      this.riskLevelFormVisible = false;
+    initMap() {
+      this.$nextTick(() => {
+        if (!this.map && this.currentLocation) {
+          this.map = L.map('map').setView([this.currentLocation.lat, this.currentLocation.lng], 13);
+
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+          }).addTo(this.map);
+
+          L.marker([this.currentLocation.lat, this.currentLocation.lng])
+            .addTo(this.map)
+            .bindPopup('You are here')
+            .openPopup();
+
+          this.map.on('click', this.handleMapClick);
+        }
+      });
     },
-    confirmDangerZone() {
-      this.isSettingDangerZone = true;
+    handleMapClick(e) {
+      if (this.isSettingDangerZone) {
+        const latLng = e.latlng;
+        const zone = {
+          latLng,
+          riskLevel: this.riskLevel,
+        };
+
+        this.dangerZones.push(zone);
+        this.drawDangerZone(latLng, this.dangerZoneRadius);
+        this.isSettingDangerZone = false;
+      }
     },
-    cancelDangerZoneSetting() {
-      this.dangerZoneFormVisible = false;
-      this.isSettingDangerZone = false;
+    drawDangerZone(latLng, radius) {
+      if (this.circle) {
+        this.map.removeLayer(this.circle);
+      }
+      this.circle = L.circle(latLng, {
+        color: 'red',
+        fillColor: '#f03',
+        fillOpacity: 0.5,
+        radius: radius,
+      }).addTo(this.map);
     },
     removeDangerZone(index) {
-      const zone = this.dangerZones[index];
-      if (zone && zone.circle) {
-        this.map.removeLayer(zone.circle);
-        this.dangerZones.splice(index, 1);
+      this.dangerZones.splice(index, 1);
+      if (this.circle) {
+        this.map.removeLayer(this.circle);
       }
+    }
+  },
+  mounted() {
+    // Ensure the map is initialized only if the currentLocation is available and mapVisible is true
+    if (this.currentLocation && this.mapVisible) {
+      this.initMap();
     }
   }
 };
@@ -281,121 +329,94 @@ export default {
 
 <style scoped>
 .container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px;
-  max-width: 100%;
-  box-sizing: border-box;
-  background-color: #f0f0f0;
-}
-
-.content {
-  width: 100%;
-  max-width: 600px;
+  max-width: 1200px;
   margin: 0 auto;
+  padding: 20px;
+  font-family: 'Arial', sans-serif;
+  color: #fff;
+  background-color: #000;
+  text-align: center;
 }
-
+.content {
+  margin-top: 20px;
+}
 .title {
-  font-size: 1.8rem;
+  font-size: 36px;
+  font-weight: bold;
   margin-bottom: 20px;
-  color: #333;
+  color: #ffcc00; /* Yellow title */
 }
-
 .btn {
-  width: 100%;
-  padding: 10px;
-  font-size: 1rem;
-  border-radius: 5px;
-  border: none;
+  padding: 10px 20px;
+  margin: 5px;
+  font-size: 16px;
+  cursor: pointer;
 }
-
 .btn-primary {
   background-color: #007bff;
   color: #fff;
 }
-
 .btn-secondary {
   background-color: #6c757d;
   color: #fff;
 }
-
 .btn-danger {
   background-color: #dc3545;
   color: #fff;
 }
-
-.form-container {
-  margin: 20px 0;
+.selected {
+  border: 2px solid #007bff;
+}
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.modal-content {
+  background: white;
   padding: 20px;
-  border: 1px solid #ddd;
-  border-radius: 10px;
-  background-color: #fff;
-}
-
-.form-title {
-  font-size: 1.2rem;
-  margin-bottom: 10px;
-}
-
-.form-group {
-  margin-bottom: 15px;
-}
-
-.form-control {
-  width: 100%;
-  padding: 10px;
   border-radius: 5px;
-  border: 1px solid #ccc;
+  text-align: left;
+  width: 300px;
 }
-
-.map {
-  height: 300px;
-  width: 100%;
-  border-radius: 10px;
+.map-setup {
   margin-top: 20px;
 }
-
-.ui-message {
-  margin: 10px 0;
-  padding: 10px;
-  border-radius: 5px;
-  font-size: 1rem;
-  text-align: center;
-  background-color: #ffc107;
-  color: #333;
+.map {
+  height: 400px;
+  width: 100%;
+  margin: 20px 0;
+  border: 2px solid #000;
 }
-
 .danger-zones {
   margin-top: 20px;
 }
-
-.danger-zones-title {
-  font-size: 1.2rem;
-  margin-bottom: 10px;
-}
-
 .danger-zone-item {
+  margin: 10px 0;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 5px;
+  text-align: left;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px;
-  border: 1px solid #ddd;
+}
+.danger-zones-title {
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+.ui-message {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: #000
+  ;
   border-radius: 5px;
-  background-color: #fff;
-  margin-bottom: 5px;
-}
-
-.danger-zone-item .btn-danger {
-  padding: 5px;
-  font-size: 0.8rem;
-}
-
-.location-info {
-  font-size: 0.9rem;
-}
-
-.location-item {
-  margin: 5px 0;
+  text-align: left;
 }
 </style>
